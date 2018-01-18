@@ -2,18 +2,13 @@ import networkx as nx
 import csv
 
 edgeList = []
+Graph = nx.Graph()
 
 with open('test.csv', 'r') as f:
     reader = csv.reader(f)
     for row in reader:
-        edgeList.append([int(x) for x in row])
+        Graph.add_edge(int(row[0]), int(row[1]), object=int(row[2]))
 
-Graph = nx.Graph()
-
-for edge in edgeList:
-    Graph.add_edge(edge[0], edge[1], object=edge[2])
-
-print(Graph.edges)
 
 
 
