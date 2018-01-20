@@ -209,14 +209,17 @@ def full_screen():
     manager = plt.get_current_fig_manager()
     try:
         manager.window.showMaximized()
+        return
     except AttributeError:
         pass
     try:
         manager.resize(*manager.window.maxsize())
+        return
     except AttributeError:
         pass
     try:
         manager.frame.Maximize(True)
+        return
     except AttributeError:
         pass
 
@@ -289,6 +292,7 @@ def main(argv):
             nx.draw_networkx_nodes(graph, pos=nx.circular_layout(graph), nodelist=[0], node_color='b')
             nx.draw_networkx_edge_labels(graph, pos=nx.circular_layout(graph), edge_labels=nx.get_edge_attributes(graph, "weight"))
             unvisited = [edge for edge in unvisited if tuple(sorted(edge)) not in cycle and tuple(reversed(sorted(edge))) not in cycle]
+            nx.draw_networkx_edges(graph, pos=nx.circular_layout(graph))
             nx.draw_networkx_edges(graph, pos=nx.circular_layout(graph), edgelist=unvisited, width=5)
             nx.draw_networkx_edges(graph, pos=nx.circular_layout(graph), edgelist=cycle, width=5, edge_color='y')
             full_screen()

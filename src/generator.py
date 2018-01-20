@@ -5,7 +5,7 @@ import getopt
 
 
 def usage():
-    print("main.py -o <output graph file> -n <number of nodes> -e <number of edges> -w <maximum weight> ")
+    print("generator.py -o <output graph file> -n <number of nodes> -e <number of edges> -w <maximum weight>")
 
 
 def main(argv):
