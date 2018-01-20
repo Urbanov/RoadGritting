@@ -1,11 +1,13 @@
 import networkx as nx
 import copy
+import sys
+import getopt
 import random
 import matplotlib.pyplot as plt
 
 UNVISITED_FACTOR = 1000
-DISTANCE_FACTOR = 2
-GRITTER_RANGE = 14
+DISTANCE_FACTOR = 1.1
+GRITTER_RANGE = 100
 
 
 class Solution:
@@ -103,6 +105,8 @@ class Tabu:
             self.insert_into_global_tabu(self.current_solution.last_node())
             self.insert_into_local_tabu(self.current_solution.penultimate_node(), self.current_solution.last_node())
             if self.current_solution.function() < self.best_solution.function():
+                # # clear global tabu
+                self.global_tabu.clear()
                 self.best_solution = self.current_solution
                 if self.best_solution.in_base():
                     # in base after successful cycle
@@ -123,6 +127,9 @@ class Tabu:
             if candidate.function() < self.best_solution.function():
                 # allow coming back to base
                 self.remove_from_global_tabu(0)
+            elif candidate.function() > self.best_solution.function():
+                # disallow coming back to base
+                self.insert_into_global_tabu(0)
             if candidate.last_node() not in self.local_tabu[candidate.penultimate_node()] and candidate.last_node() not in self.global_tabu:
                 return candidate
         else:
@@ -130,7 +137,7 @@ class Tabu:
             if sorted_list[0].function() < self.best_solution.function():
                 # try to get back to base even if its against local tabu
                 return sorted_list[0]
-            # go back, current branch cannot continue
+            # go back, cannot continue in current branch
             self.remove_from_global_tabu(self.current_solution.last_node())
             self.clear_local_tabu_for(self.current_solution.last_node())
             return neighbourhood[-1]
@@ -184,24 +191,49 @@ class VNS:
     def select_best(self):
         return sorted(self.current_solution.neighbourhood(self.radius), key=lambda obj: obj.function())[0]
 
+def usage():
+    print("main.py -f <graph file> -r <gritter range> -h <tabu/vns>")
 
-def main():
-    graph = nx.read_weighted_edgelist('14.csv', delimiter=',', nodetype=int)
+def main(argv):
+    filename = None
+    gritter_range = None
+    heuristic = None
+
+    try:
+        opts, args = getopt.getopt(argv, "f:r:h:")
+        if not opts:
+            usage()
+            sys.exit()
+    except getopt.GetoptError:
+        usage()
+        sys.exit()
+    for opt, arg in opts:
+        if opt == "-f":
+            filename = arg
+        elif opt == "r":
+            gritter_range = arg
+        elif opt == "-h":
+            heuristic = arg
+
+    graph = nx.read_weighted_edgelist(filename, delimiter=',', nodetype=int)
     nx.set_node_attributes(
         graph,
         dict(zip(list(graph.nodes), [nx.astar_path_length(graph, 0, node) for node in graph.nodes])),
         'distance'
     )
 
-    # heuristic = Tabu(graph)
-    heuristic = VNS(graph)
+    search = None
+    if heuristic == "vns":
+        search = VNS(graph)
+    elif heuristic == "tabu":
+        search = Tabu(graph)
 
-    print(heuristic.run().nodes)
-    print(heuristic.run().function())
+    print(search.run().nodes)
+    print(search.run().function())
 
     # nx.draw_circular(graph)
     # plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
