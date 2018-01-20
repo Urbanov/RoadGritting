@@ -1,31 +1,26 @@
 import networkx as nx
 import copy
+import random
+import matplotlib.pyplot as plt
 
 UNVISITED_FACTOR = 1000
 DISTANCE_FACTOR = 2
-
-MAX = 13
-
-graph = nx.read_weighted_edgelist('test.csv', delimiter=',', nodetype=int)
-nx.set_node_attributes(
-    graph,
-    dict(zip(list(graph.nodes), [nx.astar_path_length(graph, 0, node) for node in graph.nodes])),
-    'distance'
-)
+GRITTER_RANGE = 14
 
 
 class Solution:
-    def __init__(self):
+    def __init__(self, graph):
+        self.graph = graph
         self.nodes = [0]
         self.cycle_length = 0
         self.cost = 0
-        self.unvisited = nx.number_of_edges(graph)
+        self.unvisited = nx.number_of_edges(self.graph)
 
     def function(self):
-        return self.cost + self.unvisited * UNVISITED_FACTOR + graph.nodes[self.nodes[-1]]['distance'] * DISTANCE_FACTOR
+        return self.cost + self.unvisited * UNVISITED_FACTOR + self.graph.nodes[self.nodes[-1]]["distance"] * DISTANCE_FACTOR
 
     def add_node(self, node):
-        weight = graph.edges[self.nodes[-1], node]['weight']
+        weight = self.graph.edges[self.nodes[-1], node]["weight"]
         if node == 0:
             self.cycle_length = 0
         else:
@@ -37,56 +32,176 @@ class Solution:
 
     def remove_nodes(self, number_of_nodes):
         for i in range(number_of_nodes):
-            self.cost -= graph.edges[self.nodes[-1], self.nodes[-2]]['weight']
+            self.cost -= self.graph.edges[self.nodes[-1], self.nodes[-2]]["weight"]
             if not self.check_edge_existence(self.nodes.pop(), self.nodes[-1]):
                 self.unvisited += 1
-        if self.cycle_length == 0:
-            return
         self.cycle_length = 0
+        if self.nodes[-1] == 0:
+            return
         for i in reversed(range(1, len(self.nodes))):
-            self.cycle_length += graph.edges[self.nodes[i], self.nodes[i - 1]]['weight']
+            self.cycle_length += self.graph.edges[self.nodes[i], self.nodes[i - 1]]["weight"]
             if self.nodes[i - 1] == 0:
                 break
 
     def neighbourhood(self, radius=1):
-        # neighbourhood = []
-        # for node in nx.all_neighbors(graph, self.nodes[-1]):
-        #     neighbour = copy.deepcopy(self)
-        #     if neighbour.predict_cycle_length(node) <= MAX:
-        #         neighbour.add_node(node)
-        #         neighbourhood.append(neighbour)
         neighbourhood = self.recursive_neighbourhood(radius)
         if len(self.nodes) > radius:
-            backwards = copy.deepcopy(self)
-            backwards.remove_nodes(radius)
-            neighbourhood.append(backwards)
+            back = copy.deepcopy(self)
+            back.remove_nodes(radius)
+            neighbourhood.append(back)
         return neighbourhood
 
     def recursive_neighbourhood(self, radius):
-        temp_neighbourhood = []
-        for node in nx.all_neighbors(graph, self.nodes[-1]):
+        direct_neighbourhood = []
+        for node in nx.all_neighbors(self.graph, self.nodes[-1]):
             neighbour = copy.deepcopy(self)
-            if neighbour.predict_cycle_length(node) <= MAX:
+            if neighbour.predict_cycle_length(node) <= GRITTER_RANGE:
                 neighbour.add_node(node)
-                temp_neighbourhood.append(neighbour)
+                direct_neighbourhood.append(neighbour)
         if radius == 1:
-            return temp_neighbourhood
+            return direct_neighbourhood
         neighbourhood = []
-        for solution in temp_neighbourhood:
-            neighbourhood += solution.recursive_neighbourhood(radius - 1)
+        for neighbour in direct_neighbourhood:
+            neighbourhood += neighbour.recursive_neighbourhood(radius - 1)
         return neighbourhood
 
     def predict_cycle_length(self, next_node):
-        return self.cycle_length + graph.edges[self.nodes[-1], next_node]['weight'] + graph.nodes[next_node]['distance']
+        return self.cycle_length + self.graph.edges[self.nodes[-1], next_node]["weight"] + self.graph.nodes[next_node]["distance"]
 
     def check_edge_existence(self, first_node, second_node):
         for i in range(len(self.nodes) - 1):
-            if first_node == self.nodes[i] and second_node == self.nodes[i + 1] or first_node == self.nodes[i + 1] and second_node == self.nodes[i]:
+            if sorted([first_node, second_node]) == sorted([self.nodes[i], self.nodes[i + 1]]):
                 return True
         return False
 
-solution = Solution()
-solution = solution.neighbourhood(2)[1]
+    def last_node(self):
+        return self.nodes[-1]
 
-for x in solution.neighbourhood(2):
-    print(x.nodes, x.function())
+    def penultimate_node(self):
+        return self.nodes[-2]
+
+    def in_base(self):
+        return self.last_node() == 0
+
+    def cleared(self):
+        return self.unvisited == 0
+
+
+class Tabu:
+    def __init__(self, graph):
+        self.global_tabu = [0]
+        self.local_tabu = []
+        for i in range(nx.number_of_nodes(graph)):
+            self.local_tabu.append([])
+        self.current_solution = Solution(graph)
+        self.best_solution = self.current_solution
+
+    def run(self):
+        while not self.stop_condition():
+            # select best solution from neighbourhood
+            self.current_solution = self.select_best()
+            self.insert_into_global_tabu(self.current_solution.last_node())
+            self.insert_into_local_tabu(self.current_solution.penultimate_node(), self.current_solution.last_node())
+            if self.current_solution.function() < self.best_solution.function():
+                self.best_solution = self.current_solution
+                if self.best_solution.in_base():
+                    # in base after successful cycle
+                    self.successful_cycle()
+            elif self.current_solution.in_base():
+                # in base after coming back from unsuccessful cycle
+                self.unsuccessful_cycle()
+        return self.best_solution
+
+    def stop_condition(self):
+        return self.best_solution.cleared() and self.best_solution.in_base()
+
+    def select_best(self):
+        neighbourhood = self.current_solution.neighbourhood()
+        # ignore shorter neighbour
+        sorted_list = sorted(neighbourhood[:-1], key=lambda obj: obj.function())
+        for candidate in sorted_list:
+            if candidate.function() < self.best_solution.function():
+                # allow coming back to base
+                self.remove_from_global_tabu(0)
+            if candidate.last_node() not in self.local_tabu[candidate.penultimate_node()] and candidate.last_node() not in self.global_tabu:
+                return candidate
+        else:
+            # break the tabu
+            if sorted_list[0].function() < self.best_solution.function():
+                # try to get back to base even if its against local tabu
+                return sorted_list[0]
+            # go back, current branch cannot continue
+            self.remove_from_global_tabu(self.current_solution.last_node())
+            self.clear_local_tabu_for(self.current_solution.last_node())
+            return neighbourhood[-1]
+
+    def successful_cycle(self):
+        for local_tabu in self.local_tabu:
+            local_tabu.clear()
+        self.global_tabu.clear()
+        self.insert_into_global_tabu(0)
+
+    def unsuccessful_cycle(self):
+        for local_tabu in self.local_tabu[1:]:
+            local_tabu.clear()
+
+    def insert_into_local_tabu(self, node, tabu_node):
+        if tabu_node not in self.local_tabu[node]:
+            self.local_tabu[node].append(tabu_node)
+
+    def clear_local_tabu_for(self, node):
+        self.local_tabu[node].clear()
+
+    def insert_into_global_tabu(self, node):
+        if node not in self.global_tabu:
+            self.global_tabu.append(node)
+
+    def remove_from_global_tabu(self, node):
+        if node in self.global_tabu:
+            self.global_tabu.remove(node)
+
+
+class VNS:
+    def __init__(self, graph):
+        self.radius = 1
+        self.current_solution = Solution(graph)
+        self.best_solution = self.current_solution
+
+    def run(self):
+        while not self.stop_condition():
+            self.radius = 1
+            while True:
+                self.current_solution = self.select_best()
+                if self.current_solution.function() < self.best_solution.function():
+                    self.best_solution = self.current_solution
+                    break
+                self.radius += 1
+        return self.best_solution
+
+    def stop_condition(self):
+        return self.best_solution.cleared() and self.best_solution.in_base()
+
+    def select_best(self):
+        return sorted(self.current_solution.neighbourhood(self.radius), key=lambda obj: obj.function())[0]
+
+
+def main():
+    graph = nx.read_weighted_edgelist('14.csv', delimiter=',', nodetype=int)
+    nx.set_node_attributes(
+        graph,
+        dict(zip(list(graph.nodes), [nx.astar_path_length(graph, 0, node) for node in graph.nodes])),
+        'distance'
+    )
+
+    # heuristic = Tabu(graph)
+    heuristic = VNS(graph)
+
+    print(heuristic.run().nodes)
+    print(heuristic.run().function())
+
+    # nx.draw_circular(graph)
+    # plt.show()
+
+
+if __name__ == "__main__":
+    main()
