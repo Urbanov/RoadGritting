@@ -106,7 +106,7 @@ class Tabu:
             self.insert_into_local_tabu(self.current_solution.penultimate_node(), self.current_solution.last_node())
             if self.current_solution.function() < self.best_solution.function():
                 # clear global tabu
-                self.global_tabu.clear()
+                self.global_tabu = []
                 self.best_solution = self.current_solution
                 if self.best_solution.in_base():
                     # in base after successful cycle
@@ -121,7 +121,6 @@ class Tabu:
 
     def select_best(self):
         neighbourhood = self.current_solution.neighbourhood()
-        sorted_list = []
         if len(neighbourhood) == 1 or len(neighbourhood[-1].nodes) == len(neighbourhood[-2].nodes):
             sorted_list = sorted(neighbourhood, key=lambda obj: obj.function())
         else:
@@ -148,20 +147,20 @@ class Tabu:
 
     def successful_cycle(self):
         for local_tabu in self.local_tabu:
-            local_tabu.clear()
-        self.global_tabu.clear()
+            del local_tabu[:]
+        self.global_tabu = []
         self.insert_into_global_tabu(0)
 
     def unsuccessful_cycle(self):
         for local_tabu in self.local_tabu[1:]:
-            local_tabu.clear()
+            del local_tabu[:]
 
     def insert_into_local_tabu(self, node, tabu_node):
         if tabu_node not in self.local_tabu[node]:
             self.local_tabu[node].append(tabu_node)
 
     def clear_local_tabu_for(self, node):
-        self.local_tabu[node].clear()
+        self.local_tabu[node] = []
 
     def insert_into_global_tabu(self, node):
         if node not in self.global_tabu:
