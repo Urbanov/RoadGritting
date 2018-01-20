@@ -200,7 +200,7 @@ def usage():
           " -i <input graph file>"
           " -r <gritter range>"
           " -h <tabu/vns>"
-          " -d <show const and list of nodes>"
+          " -d <show cost and list of nodes>"
           " -v <show visual representation>"
           " -t <perform timed run>")
 
