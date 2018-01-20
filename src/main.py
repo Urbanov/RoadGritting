@@ -2,21 +2,21 @@ import networkx as nx
 import copy
 import sys
 import getopt
-import random
 import matplotlib.pyplot as plt
+from timeit import default_timer as timer
 
 UNVISITED_FACTOR = 1000
 DISTANCE_FACTOR = 1.1
-GRITTER_RANGE = 100
 
 
 class Solution:
-    def __init__(self, graph):
+    def __init__(self, graph, gritter_range):
         self.graph = graph
         self.nodes = [0]
         self.cycle_length = 0
         self.cost = 0
         self.unvisited = nx.number_of_edges(self.graph)
+        self.gritter_range = gritter_range
 
     def function(self):
         return self.cost + self.unvisited * UNVISITED_FACTOR + self.graph.nodes[self.nodes[-1]]["distance"] * DISTANCE_FACTOR
@@ -57,7 +57,7 @@ class Solution:
         direct_neighbourhood = []
         for node in nx.all_neighbors(self.graph, self.nodes[-1]):
             neighbour = copy.deepcopy(self)
-            if neighbour.predict_cycle_length(node) <= GRITTER_RANGE:
+            if neighbour.predict_cycle_length(node) <= self.gritter_range:
                 neighbour.add_node(node)
                 direct_neighbourhood.append(neighbour)
         if radius == 1:
@@ -90,12 +90,12 @@ class Solution:
 
 
 class Tabu:
-    def __init__(self, graph):
+    def __init__(self, graph, gritter_range):
         self.global_tabu = [0]
         self.local_tabu = []
         for i in range(nx.number_of_nodes(graph)):
             self.local_tabu.append([])
-        self.current_solution = Solution(graph)
+        self.current_solution = Solution(graph, gritter_range)
         self.best_solution = self.current_solution
 
     def run(self):
@@ -105,7 +105,7 @@ class Tabu:
             self.insert_into_global_tabu(self.current_solution.last_node())
             self.insert_into_local_tabu(self.current_solution.penultimate_node(), self.current_solution.last_node())
             if self.current_solution.function() < self.best_solution.function():
-                # # clear global tabu
+                # clear global tabu
                 self.global_tabu.clear()
                 self.best_solution = self.current_solution
                 if self.best_solution.in_base():
@@ -121,8 +121,12 @@ class Tabu:
 
     def select_best(self):
         neighbourhood = self.current_solution.neighbourhood()
-        # ignore shorter neighbour
-        sorted_list = sorted(neighbourhood[:-1], key=lambda obj: obj.function())
+        sorted_list = []
+        if len(neighbourhood) == 1 or len(neighbourhood[-1].nodes) == len(neighbourhood[-2].nodes):
+            sorted_list = sorted(neighbourhood, key=lambda obj: obj.function())
+        else:
+            # ignore shorter neighbour if exists
+            sorted_list = sorted(neighbourhood[:-1], key=lambda obj: obj.function())
         for candidate in sorted_list:
             if candidate.function() < self.best_solution.function():
                 # allow coming back to base
@@ -169,9 +173,9 @@ class Tabu:
 
 
 class VNS:
-    def __init__(self, graph):
+    def __init__(self, graph, gritter_range):
         self.radius = 1
-        self.current_solution = Solution(graph)
+        self.current_solution = Solution(graph, gritter_range)
         self.best_solution = self.current_solution
 
     def run(self):
@@ -191,16 +195,43 @@ class VNS:
     def select_best(self):
         return sorted(self.current_solution.neighbourhood(self.radius), key=lambda obj: obj.function())[0]
 
+
 def usage():
-    print("main.py -f <graph file> -r <gritter range> -h <tabu/vns>")
+    print("main.py"
+          " -i <input graph file>"
+          " -r <gritter range>"
+          " -h <tabu/vns>"
+          " -d <show const and list of nodes>"
+          " -v <show visual representation>"
+          " -t <perform timed run>")
+
+
+def full_screen():
+    manager = plt.get_current_fig_manager()
+    try:
+        manager.window.showMaximized()
+    except AttributeError:
+        pass
+    try:
+        manager.resize(*manager.window.maxsize())
+    except AttributeError:
+        pass
+    try:
+        manager.frame.Maximize(True)
+    except AttributeError:
+        pass
+
 
 def main(argv):
     filename = None
     gritter_range = None
     heuristic = None
+    show_graph = False
+    show_data = False
+    timed_run = False
 
     try:
-        opts, args = getopt.getopt(argv, "f:r:h:")
+        opts, args = getopt.getopt(argv, "i:r:h:dvt")
         if not opts:
             usage()
             sys.exit()
@@ -208,31 +239,61 @@ def main(argv):
         usage()
         sys.exit()
     for opt, arg in opts:
-        if opt == "-f":
+        if opt == "-i":
             filename = arg
-        elif opt == "r":
-            gritter_range = arg
+        elif opt == "-r":
+            gritter_range = float(arg)
         elif opt == "-h":
             heuristic = arg
+        elif opt == "-v":
+            show_graph = True
+        elif opt == "-d":
+            show_data = True
+        elif opt == "-t":
+            timed_run = True
 
     graph = nx.read_weighted_edgelist(filename, delimiter=',', nodetype=int)
     nx.set_node_attributes(
         graph,
         dict(zip(list(graph.nodes), [nx.astar_path_length(graph, 0, node) for node in graph.nodes])),
-        'distance'
-    )
+        "distance")
 
     search = None
     if heuristic == "vns":
-        search = VNS(graph)
+        search = VNS(graph, gritter_range)
     elif heuristic == "tabu":
-        search = Tabu(graph)
+        search = Tabu(graph, gritter_range)
+    start = timer()
+    result = search.run()
+    end = timer()
 
-    print(search.run().nodes)
-    print(search.run().function())
+    if show_data:
+        print("\nfound solution: ", result.nodes)
+        print("\ncost: ", result.function())
 
-    # nx.draw_circular(graph)
-    # plt.show()
+    if timed_run:
+        print("\nelapsed:", end - start)
+
+    if show_graph:
+        node_list = result.nodes
+        cycles = []
+        current_cycle = []
+        for i in range(1, len(node_list)):
+            current_cycle.append((node_list[i - 1], node_list[i]))
+            if node_list[i] == 0:
+                cycles.append(current_cycle)
+                current_cycle = []
+
+        unvisited = list(graph.edges)
+        for index, cycle in enumerate(cycles):
+            nx.draw_networkx_nodes(graph, pos=nx.circular_layout(graph))
+            nx.draw_networkx_nodes(graph, pos=nx.circular_layout(graph), nodelist=[0], node_color='b')
+            nx.draw_networkx_edge_labels(graph, pos=nx.circular_layout(graph), edge_labels=nx.get_edge_attributes(graph, "weight"))
+            unvisited = [edge for edge in unvisited if tuple(sorted(edge)) not in cycle and tuple(reversed(sorted(edge))) not in cycle]
+            nx.draw_networkx_edges(graph, pos=nx.circular_layout(graph), edgelist=unvisited, width=5)
+            nx.draw_networkx_edges(graph, pos=nx.circular_layout(graph), edgelist=cycle, width=5, edge_color='y')
+            full_screen()
+            plt.show()
 
 
 if __name__ == "__main__":
